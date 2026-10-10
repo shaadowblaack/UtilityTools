@@ -34,11 +34,13 @@ function Rename-ToConvention {
         return
     }
 
+    # Sort by length descending so child items rename before their parent folders
     $items = Get-ChildItem -Path $Path -Recurse:$Recurse |
              Sort-Object { $_.FullName.Length } -Descending
 
     $changed = 0
     $skipped = 0
+    $locked = 0 # New counter for files locked by other processes
 
     foreach ($item in $items) {
         $oldName = $item.Name
@@ -49,10 +51,12 @@ function Rename-ToConvention {
             else { $_ }
         }) -join '_'
 
+        # Skip if the name is already in the correct convention
         if ($newName -ceq $oldName) { continue }
 
         $newFull = Join-Path (Split-Path $item.FullName -Parent) $newName
 
+        # Skip if a file with the new name already exists (collision)
         if ((Test-Path -LiteralPath $newFull) -and ($newFull -ne $item.FullName)) {
             Write-Host "  SKIP (exists): $oldName" -ForegroundColor DarkYellow
             $skipped++
@@ -61,13 +65,28 @@ function Rename-ToConvention {
 
         if ($Preview) {
             Write-Host "  would rename: $oldName  ->  $newName" -ForegroundColor Cyan
-        } else {
-            Rename-Item -LiteralPath $item.FullName -NewName $newName
-            Write-Host "  renamed: $oldName  ->  $newName" -ForegroundColor Green
+            $changed++
+        } 
+        else {
+            try {
+                # -ErrorAction Stop forces PowerShell to trigger the 'catch' block on failure
+                Rename-Item -LiteralPath $item.FullName -NewName $newName -ErrorAction Stop
+                Write-Host "  renamed: $oldName  ->  $newName" -ForegroundColor Green
+                $changed++
+            }
+            catch {
+                # Catches "used by another process" or "access denied" errors gracefully
+                Write-Warning "  skipped (locked): '$oldName' is in use by another process or access denied."
+                $locked++
+            }
         }
-        $changed++
     }
 
-    if ($Preview) { Write-Host "`nPreview: $changed item(s) would be renamed." -ForegroundColor Cyan }
-    else { Write-Host "`nDone: $changed renamed, $skipped skipped." -ForegroundColor Green }
+    # Final Summary Output
+    if ($Preview) { 
+        Write-Host "`nPreview: $changed item(s) would be renamed." -ForegroundColor Cyan 
+    }
+    else { 
+        Write-Host "`nDone: $changed renamed, $skipped skipped (collision), $locked skipped (locked)." -ForegroundColor Green 
+    }
 }
