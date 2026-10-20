@@ -1,1 +1,11 @@
 .kilo
+
+# Ignore local secrets
+config.json
+
+# Ignore local state/memory files
+.get-updates/
+icab.json
+
+# Ignore PowerShell module cache
+*.psm1.bak
